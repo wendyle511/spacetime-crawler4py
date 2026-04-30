@@ -1,8 +1,26 @@
 import re
+import hashlib
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
+from collections import Counter
 
-# Allowed domains
+visited_urls = set()
+
+word_counter = Counter()
+page_word_count = {}
+
+max_words = 0
+max_words_url = ""
+
+subdomain_counts = Counter()
+
+page_simhashes = []
+
+STOPWORDS = set("""
+a an and are as at be by for from has he in is it its of on that the to was were will with
+this that these those
+""".split())
+
 ALLOWED_DOMAINS = (
     "ics.uci.edu",
     "cs.uci.edu",
@@ -10,94 +28,131 @@ ALLOWED_DOMAINS = (
     "stat.uci.edu"
 )
 
+def normalize(url):
+    url, _ = urldefrag(url)
+    return url.rstrip("/")
+
+def stable_hash(word):
+    return int(hashlib.md5(word.encode()).hexdigest(), 16)
+
+def simhash(words):
+    v = [0] * 64
+    for w in words:
+        h = stable_hash(w)
+        for i in range(64):
+            v[i] += 1 if (h >> i) & 1 else -1
+
+    fp = 0
+    for i in range(64):
+        if v[i] > 0:
+            fp |= (1 << i)
+    return fp
+
+def hamming(a, b):
+    return bin(a ^ b).count("1")
+
+def is_duplicate(words, threshold=10):
+    h = simhash(words)
+
+    for old in page_simhashes:
+        if hamming(h, old) <= threshold:
+            return True
+
+    page_simhashes.append(h)
+    return False
+
+def is_trap_url(url):
+    return "filter" in url or "people/?" in url
+
 def scraper(url, resp):
-    """
-    Main entry point called by crawler.
-    Returns filtered list of URLs.
-    """
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
 
-
 def extract_next_links(url, resp):
-    """
-    Extracts and normalizes all hyperlinks from a page.
-    """
-    extracted_links = []
+    global max_words, max_words_url
+
+    links = []
+
+    if resp.status != 200 or not resp.raw_response:
+        return links
+
+    if "text/html" not in resp.raw_response.headers.get("Content-Type", ""):
+        return links
+
+    url = normalize(url)
+
+    if url in visited_urls:
+        return links
+    visited_urls.add(url)
 
     try:
-        # Ensure response is valid
-        if not resp or not resp.raw_response or not resp.raw_response.content:
-            return extracted_links
+        soup = BeautifulSoup(resp.raw_response.content, "lxml")
 
-        # Parse HTML
-        soup = BeautifulSoup(resp.raw_response.content, "html.parser")
+        text = soup.get_text(" ")
+        words = re.findall(r"[a-zA-Z]+", text.lower())
+        words = [w for w in words if w not in STOPWORDS]
 
-        # Find all anchor tags
-        for tag in soup.find_all("a", href=True):
-            href = tag.get("href")
+        if len(words) < 100:
+            return []
 
-            if not href:
+        if is_duplicate(words):
+            return []
+
+        word_counter.update(words)
+        page_word_count[url] = len(words)
+
+        if len(words) > max_words:
+            max_words = len(words)
+            max_words_url = url
+
+        host = urlparse(url).netloc.lower().replace("www.", "")
+        subdomain_counts[host] += 1
+
+        for a in soup.find_all("a", href=True):
+            abs_url = normalize(urljoin(url, a["href"]))
+
+            if is_trap_url(abs_url):
                 continue
 
-            # Convert relative URL → absolute URL
-            absolute_url = urljoin(resp.url, href)
+            links.append(abs_url)
 
-            # Remove fragment (#section)
-            clean_url, _ = urldefrag(absolute_url)
+    except:
+        return []
 
-            extracted_links.append(clean_url)
-
-    except Exception as e:
-        print(f"[extract_next_links error] {e}")
-
-    return extracted_links
-
+    return links
 
 def is_valid(url):
-    """
-    Filters URLs to ensure crawler stays inside allowed domains
-    and avoids unwanted file types.
-    """
     try:
         parsed = urlparse(url)
 
-        # Only http/https
-        if parsed.scheme not in {"http", "https"}:
+        if parsed.scheme not in ("http", "https"):
             return False
 
-        host = parsed.netloc.lower()
+        host = parsed.netloc.lower().replace("www.", "")
 
-        # Remove port if present (e.g., example.com:80)
-        host = host.split(":")[0]
-
-        # Must belong to allowed domains (including subdomains)
         if not any(host == d or host.endswith("." + d) for d in ALLOWED_DOMAINS):
             return False
 
-        # Must have valid host
-        if not host:
+        if re.search(r"\.(css|js|png|jpg|jpeg|gif|pdf|zip|mp4|docx|pptx)$", parsed.path.lower()):
             return False
 
-        # Reject unwanted file extensions
-        if re.match(
-            r".*\.(css|js|bmp|gif|jpe?g|ico"
-            r"|png|tiff?|mid|mp2|mp3|mp4"
-            r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
-            r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx"
-            r"|data|dat|exe|bz2|tar|msi|bin|7z|dmg|iso"
-            r"|epub|dll|tgz|war|zip|rar|gz)$",
-            parsed.path.lower()
-        ):
-            return False
-
-        # Optional safety: avoid extremely long URLs (trap prevention)
         if len(url) > 2000:
             return False
 
         return True
 
-    except TypeError:
+    except:
         return False
-    except Exception:
-        return False
+
+def generate_report():
+    with open("report.txt", "w", encoding="utf-8") as f:
+        f.write("1. Longest page (by word count)\n")
+        f.write(f"{max_words_url} , {max_words}\n\n")
+
+        f.write("2. Top 50 most common words\n")
+        for word, count in word_counter.most_common(50):
+            f.write(f"{word}, {count}\n")
+
+        f.write("\n3. Subdomains\n")
+        for subdomain in sorted(subdomain_counts):
+            f.write(f"{subdomain}, {subdomain_counts[subdomain]}\n")
