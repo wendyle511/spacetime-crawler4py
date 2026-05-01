@@ -105,6 +105,8 @@ def is_valid(url):
         if len(url) > 3000:
             return False
 
+        # ---------------- TRAPS ----------------
+
         if "/events/" in path or path.endswith("/events"):
             return False
 
@@ -136,3 +138,19 @@ def is_valid(url):
 
     except:
         return False
+
+def generate_report():
+    with open("report.txt", "w", encoding="utf-8") as f:
+        f.write("1. Number of unique pages\n")
+        f.write(f"{len(visited_urls)}\n\n")
+
+        f.write("2. Longest page (by word count)\n")
+        f.write(f"{max_words_url} , {max_words}\n\n")
+
+        f.write("3. Top 50 most common words\n")
+        for word, count in word_counter.most_common(50):
+            f.write(f"{word}, {count}\n")
+
+        f.write("\n4. Subdomains\n")
+        for subdomain in sorted(subdomain_pages):
+            f.write(f"{subdomain}, {len(subdomain_pages[subdomain])}\n")
