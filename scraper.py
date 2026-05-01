@@ -57,15 +57,17 @@ def is_duplicate(words, threshold=10):
         if hamming(h, old) <= threshold:
             return True
     page_simhashes.append(h)
+    if len(page_simhashes) > 10000:
+        page_simhashes.pop(0)
     return False
 
 def is_trap_url(url):
     url = url.lower()
-    if re.search(r"(\?|\&).*=", url):
+    if url.count("?") > 1:
         return True
     if url.count("/") > 10:
         return True
-    if re.search(r"(calendar|event|login|signup|filter)", url):
+    if re.search(r"(calendar|event|login|signup)", url):
         return True
     return False
 
@@ -125,7 +127,8 @@ def extract_next_links(url, resp):
                 continue
             links.append(abs_url)
 
-    except:
+    except Exception as e:
+        print(f"Error processing {url}: {e}")
         return []
 
     return links
@@ -142,13 +145,13 @@ def is_valid(url):
         if not any(host == d or host.endswith("." + d) for d in ALLOWED_DOMAINS):
             return False
 
-        if re.search(r"\.(css|js|png|jpg|jpeg|gif|pdf|zip|mp4|docx|pptx|xlsx)$", parsed.path.lower()):
+        if re.search(
+            r"\.(css|js|png|jpg|jpeg|gif|pdf|zip|mp4|docx|pptx|xlsx|exe)$",
+            parsed.path.lower()
+        ):
             return False
 
         if len(url) > 2000:
-            return False
-
-        if re.search(r"/(page|p|id)/\d+", parsed.path.lower()):
             return False
 
         return True
@@ -158,16 +161,16 @@ def is_valid(url):
 
 def generate_report():
     with open("report.txt", "w", encoding="utf-8") as f:
-        f.write("0. Number of unique pages\n")
+        f.write("1. Number of unique pages\n")
         f.write(f"{len(visited_urls)}\n\n")
 
-        f.write("1. Longest page (by word count)\n")
+        f.write("2. Longest page (by word count)\n")
         f.write(f"{max_words_url} , {max_words}\n\n")
 
-        f.write("2. Top 50 most common words\n")
+        f.write("3. Top 50 most common words\n")
         for word, count in word_counter.most_common(50):
             f.write(f"{word}, {count}\n")
 
-        f.write("\n3. Subdomains\n")
+        f.write("4. Subdomains\n")
         for subdomain in sorted(subdomain_counts):
             f.write(f"{subdomain}, {subdomain_counts[subdomain]}\n")
