@@ -24,27 +24,13 @@ ALLOWED_DOMAINS = (
     "stat.uci.edu"
 )
 
-def normalize(url):
-    url, _ = urldefrag(url)
-    parsed = urlparse(url)
-    return parsed.scheme + "://" + parsed.netloc + parsed.path.rstrip("/")
-
 def is_trap_url(url):
     parsed = urlparse(url)
     domain = parsed.netloc.lower().replace("www.", "")
     path = parsed.path.lower()
     query = parsed.query.lower()
 
-    if "calendar" in url or "login" in url or "signup" in url:
-        return True
-
-    if "/events/" in path or path.endswith("/events"):
-        return True
-
-    if "ical" in path or "ical" in query:
-        return True
-
-    if "tribe" in path or "tribe" in query:
+    if "login" in path or "signup" in path:
         return True
 
     if "doku.php" in path:
@@ -56,13 +42,24 @@ def is_trap_url(url):
     if domain == "fano.ics.uci.edu" and path.startswith("/ca/rules"):
         return True
 
-    if domain == "gitlab.ics.uci.edu":
-        return True
-
     if domain == "grape.ics.uci.edu":
         return True
 
     if domain == "isg.ics.uci.edu" and path.startswith("/events"):
+        return True
+
+    if domain == "gitlab.ics.uci.edu" and (
+        "/-/" in path or "/commit" in path or "/merge_requests" in path
+    ):
+        return True
+
+    if "ical" in path or "ical" in query:
+        return True
+
+    if "tribe" in path or "tribe" in query:
+        return True
+
+    if "/events" in path and "calendar" in path:
         return True
 
     return False
@@ -82,7 +79,9 @@ def extract_next_links(url, resp):
     if "text/html" not in content_type:
         return links
 
-    url = normalize(url)
+    url, _ = urldefrag(url)
+    parsed_url = urlparse(url)
+    url = parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path.rstrip("/")
 
     if url in visited_urls:
         return links
@@ -111,14 +110,18 @@ def extract_next_links(url, resp):
             max_words = len(words)
             max_words_url = url
 
-        host = urlparse(url).netloc.lower().replace("www.", "")
+        host = parsed_url.netloc.lower().replace("www.", "")
         subdomain_counts[host] += 1
 
         for a in soup.find_all("a", href=True):
-            abs_url = normalize(urljoin(url, a["href"]))
-            if is_trap_url(abs_url):
+            abs_url, _ = urldefrag(urljoin(url, a["href"]))
+            parsed = urlparse(abs_url)
+            clean_url = parsed.scheme + "://" + parsed.netloc + parsed.path.rstrip("/")
+
+            if is_trap_url(clean_url):
                 continue
-            links.append(abs_url)
+
+            links.append(clean_url)
 
     except:
         return []
