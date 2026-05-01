@@ -99,7 +99,8 @@ def extract_next_links(url, resp):
     visited_urls.add(url)
 
     try:
-        soup = BeautifulSoup(resp.raw_response.content, "lxml")
+        content = resp.raw_response.content.decode("utf-8", errors="ignore")
+        soup = BeautifulSoup(content, "lxml")
 
         for tag in soup(["script", "style"]):
             tag.extract()
