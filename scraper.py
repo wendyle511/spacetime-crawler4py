@@ -171,6 +171,6 @@ def generate_report():
         for word, count in word_counter.most_common(50):
             f.write(f"{word}, {count}\n")
 
-        f.write("4. Subdomains\n")
+        f.write("\n4. Subdomains\n")
         for subdomain in sorted(subdomain_counts):
             f.write(f"{subdomain}, {subdomain_counts[subdomain]}\n")
