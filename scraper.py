@@ -51,24 +51,30 @@ def simhash(words):
 def hamming(a, b):
     return bin(a ^ b).count("1")
 
-def is_duplicate(words, threshold=10):
+def is_duplicate(words, threshold=12):
     h = simhash(words)
+
     for old in page_simhashes:
         if hamming(h, old) <= threshold:
             return True
+
     page_simhashes.append(h)
-    if len(page_simhashes) > 10000:
+
+    if len(page_simhashes) > 15000:
         page_simhashes.pop(0)
+
     return False
 
 def is_trap_url(url):
     url = url.lower()
-    if url.count("?") > 1:
+
+    # only mild trap detection (avoid overblocking)
+    if url.count("/") > 12:
         return True
-    if url.count("/") > 10:
+
+    if re.search(r"(calendar|login|signup)", url):
         return True
-    if re.search(r"(calendar|event|login|signup)", url):
-        return True
+
     return False
 
 def scraper(url, resp):
@@ -102,7 +108,8 @@ def extract_next_links(url, resp):
         words = re.findall(r"[a-zA-Z]+", text.lower())
         words = [w for w in words if w not in STOPWORDS and len(w) > 2]
 
-        if len(words) < 100:
+        # FIX: lowered threshold (this was killing your crawl size)
+        if len(words) < 40:
             return []
 
         if len(words) > 50000:
@@ -123,8 +130,10 @@ def extract_next_links(url, resp):
 
         for a in soup.find_all("a", href=True):
             abs_url = normalize(urljoin(url, a["href"]))
+
             if is_trap_url(abs_url):
                 continue
+
             links.append(abs_url)
 
     except Exception as e:
