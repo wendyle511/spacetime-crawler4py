@@ -1,5 +1,4 @@
 import re
-import hashlib
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 from collections import Counter
@@ -12,7 +11,6 @@ max_words = 0
 max_words_url = ""
 
 subdomain_counts = Counter()
-page_simhashes = []
 
 STOPWORDS = set("""
 a an and are as at be by for from has he in is it its of on that the to was were will with
@@ -28,53 +26,13 @@ ALLOWED_DOMAINS = (
 
 def normalize(url):
     url, _ = urldefrag(url)
-    return url.rstrip("/")
-
-def stable_hash(word):
-    return int(hashlib.md5(word.encode()).hexdigest(), 16)
-
-def simhash(words):
-    v = [0] * 64
-    for w in words:
-        h = stable_hash(w)
-        for i in range(64):
-            if (h >> i) & 1:
-                v[i] += 1
-            else:
-                v[i] -= 1
-    fp = 0
-    for i in range(64):
-        if v[i] > 0:
-            fp |= (1 << i)
-    return fp
-
-def hamming(a, b):
-    return bin(a ^ b).count("1")
-
-def is_duplicate(words, threshold=12):
-    h = simhash(words)
-
-    for old in page_simhashes:
-        if hamming(h, old) <= threshold:
-            return True
-
-    page_simhashes.append(h)
-
-    if len(page_simhashes) > 15000:
-        page_simhashes.pop(0)
-
-    return False
+    parsed = urlparse(url)
+    return parsed.scheme + "://" + parsed.netloc + parsed.path.rstrip("/")
 
 def is_trap_url(url):
     url = url.lower()
-
-    # only mild trap detection (avoid overblocking)
-    if url.count("/") > 12:
+    if "calendar" in url or "login" in url or "signup" in url:
         return True
-
-    if re.search(r"(calendar|login|signup)", url):
-        return True
-
     return False
 
 def scraper(url, resp):
@@ -99,8 +57,7 @@ def extract_next_links(url, resp):
     visited_urls.add(url)
 
     try:
-        content = resp.raw_response.content.decode("utf-8", errors="ignore")
-        soup = BeautifulSoup(content, "lxml")
+        soup = BeautifulSoup(resp.raw_response.content, "lxml")
 
         for tag in soup(["script", "style"]):
             tag.extract()
@@ -109,14 +66,11 @@ def extract_next_links(url, resp):
         words = re.findall(r"[a-zA-Z]+", text.lower())
         words = [w for w in words if w not in STOPWORDS and len(w) > 2]
 
-        # FIX: lowered threshold (this was killing your crawl size)
-        if len(words) < 40:
+        # 🔥 IMPORTANT CHANGE (was 40 → now 20)
+        if len(words) < 20:
             return []
 
-        if len(words) > 50000:
-            return []
-
-        if is_duplicate(words):
+        if len(words) > 80000:
             return []
 
         word_counter.update(words)
@@ -137,8 +91,7 @@ def extract_next_links(url, resp):
 
             links.append(abs_url)
 
-    except Exception as e:
-        print(f"Error processing {url}: {e}")
+    except:
         return []
 
     return links
@@ -155,13 +108,10 @@ def is_valid(url):
         if not any(host == d or host.endswith("." + d) for d in ALLOWED_DOMAINS):
             return False
 
-        if re.search(
-            r"\.(css|js|png|jpg|jpeg|gif|pdf|zip|mp4|docx|pptx|xlsx|exe)$",
-            parsed.path.lower()
-        ):
+        if re.search(r"\.(css|js|png|jpg|jpeg|gif|pdf|zip|mp4|docx|pptx|xlsx|exe)$", parsed.path.lower()):
             return False
 
-        if len(url) > 2000:
+        if len(url) > 3000:
             return False
 
         return True
