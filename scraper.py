@@ -153,16 +153,16 @@ def is_valid(url):
 
 def generate_report():
     with open("report.txt", "w", encoding="utf-8") as f:
-        f.write("0. Number of unique pages\n")
+        f.write("1. Number of unique pages\n")
         f.write(f"{len(visited_urls)}\n\n")
 
-        f.write("1. Longest page (by word count)\n")
+        f.write("2. Longest page (by word count)\n")
         f.write(f"{max_words_url} , {max_words}\n\n")
 
-        f.write("2. Top 50 most common words\n")
+        f.write("3. Top 50 most common words\n")
         for word, count in word_counter.most_common(50):
             f.write(f"{word}, {count}\n")
 
-        f.write("\n3. Subdomains\n")
+        f.write("\n4. Subdomains\n")
         for subdomain in sorted(subdomain_counts):
             f.write(f"{subdomain}, {subdomain_counts[subdomain]}\n")
